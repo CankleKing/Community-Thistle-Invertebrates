@@ -67,6 +67,7 @@ print(table_df)
 # Load in the dataframes via "Import Dataset" button in Environment (top right)
 # https://github.com/CankleKing/Community-Thistle-Invertebrates
 
+library("dplyr")
 # Remove the absence data
 species_list_prez <- subset(species_list, count != 0)
 
@@ -127,7 +128,6 @@ merged_data$no_leaves <- merged_data$leaves_alive + merged_data$leaves_dead
 
 ####################### Working out distribution data ##########################
 library(geometry)
-library(dplyr)
 library(tidyr)  
 library(ggplot2)
 library(sp)
@@ -346,7 +346,8 @@ merged_data <- merge(merged_data, shannon_data, by = "code", all.x = TRUE)
 calculate_simpson <- function(abundance) {
   p <- abundance / sum(abundance)  
   simpson_index <- sum(p^2, na.rm = TRUE)  
-  return(simpson_index)
+  simpson_index <- 1 - simpson_index # 1 - D makes interpreation more intuitive
+  return(simpson_index)              # Making a high D mean higher diversity
 }
 
 # Calculate the Simpson Index for each focal thistle
@@ -508,103 +509,6 @@ View(selected_order)
 
 # Create a data frame without data on species absence
 selected_order_prez <- subset(selected_order, count != 0)
-
-
-
-
-
-
-
-
-
-################################################################################
-######################## Bubble plots of seasonality ###########################
-################################################################################
-library(ggplot2)
-library(dplyr)
-library(tibble)
-
-# Extract Unique Dates and Sort
-datesUnique <- sort( with( selected_order_prez, unique(date) ) )
-
-# Calculate Species Richness by Order and Date
-rich <- with( selected_order_prez, tapply( interaction(order, date), 
-                                        interaction(order, date), length ) )
-
-# Create a Vector for Unique Thistles Count
-thistles <- rep(NA, 25)
-
-# Count Unique Codes for Each Date
-for(i in 1:25){thistles[i] <- length( unique(
-  selected_order_prez$code[as.character(selected_order_prez$date) 
-                      == as.character(datesUnique[i])] ) )}
-thistles
-
-# Create Data Frame for Bubble Plot
-countDF <- tibble( Order = rep(orders_of_interest, 25),
-                   Date = rep(datesUnique, each = 6),
-                   Richness = rich,
-                   Effort = rep(thistles, each = 6) )
-
-# Create a plot of species richness within orders over the course of the study 
-season_rich_p <- countDF %>%
-  ggplot( aes(x = Order, y = Date, size = Richness/Effort, col = Order, 
-              fill = Order) ) +
-  geom_point(pch = 21, alpha = 0.5) + 
-  scale_size_continuous(range = c(1, 30), guide = "legend", 
-                        trans = "identity") + 
-  theme_bw() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 12),
-        axis.text.y = element_text(angle = 45, hjust = 1, size = 12),
-        aspect.ratio = 1) +
-  labs(x = "Order", y = "Date") +
-  guides(fill = "none") 
-
-#View plot
-season_rich_p
-
-
-########################## Seasonal plot of Abundance ##########################
-
-# Calculate abundance (count of individuals) for each order by date
-abundance <- with(selected_order_prez, tapply(count, interaction(order, date), 
-                                              sum))
-
-# Count the number of unique thistle patches per date
-thistles <- rep(NA, 25)
-for (i in 1:25) {
- thistles[i] <- 
- length(unique(selected_order_prez$code[as.character(selected_order_prez$date) 
-                                      == as.character(datesUnique[i])]))
-}
-
-# Create a dataframe for plotting
-countDF <- tibble(
-  Order = rep(orders_of_interest, 25),  
-  Date = rep(datesUnique, each = 6),
-  Abundance = abundance,
-  Effort = rep(thistles, each = 6),
-  EffortCorrectedAbundance = abundance / rep(thistles, each = 6))
-
-# Create a plot of effort-corrected abundance over the course of the study
-season_abundance_p <- countDF %>%
-  ggplot(aes(x = Order, y = Date, size = EffortCorrectedAbundance, 
-             col = Order, fill = Order)) +
-  geom_point(pch = 21, alpha = 0.5) +
-  scale_size_continuous(range = c(1, 30), guide = "legend", trans = "identity")+
-  theme_bw() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1),
-        aspect.ratio = 1) +
-  labs(x = "Order", y = "Date", size = "Abundance per Effort") +
-  guides(fill = "none")
-
-# Display the plot
-season_abundance_p
-
-
-
-
-
 
 
 
@@ -1518,6 +1422,7 @@ print(descriptive_stats_long)
 ######################### Univariate regression models #########################
 ################################################################################
 # Fit GLM to individual explanatory variables (not to analyse more to just view)
+library(MASS)
 ################################### Abundance ##################################
 # For all species
 # Create a list of variable names to put through the formula 
@@ -1714,6 +1619,7 @@ summary(full_model_even_select)
 ################################################################################
 ############################ GLM's and their graphs ############################
 ################################################################################
+library(MASS)
 
 ################################### Abundance ##################################
 
@@ -2935,16 +2841,16 @@ response_even_AIC <- AIC(
 # Adjust as neccessary
 # Extract the estimates, standard errors, z-values, and p-values
 # Adjust if using a model that generates t-values 
-estimates <- coef(simple_model_even)
-std_errors <- summary(simple_model_even)$coefficients[, "Std. Error"]
-t_values <- summary(simple_model_even)$coefficients[, "t value"]
-p_values <- summary(simple_model_even)$coefficients[, "Pr(>|t|)"]
+estimates <- coef(simple_model_simp)
+std_errors <- summary(simple_model_simp)$coefficients[, "Std. Error"]
+t_values <- summary(simple_model_simp)$coefficients[, "t value"]
+p_values <- summary(simple_model_simp)$coefficients[, "Pr(>|t|)"]
 
 # Create a custom data frame with the new Estimate column
 custom_table <- data.frame(
   Estimate = estimates,
   Std_Error = std_errors,
-  z_value = z_values,
+  t_value = t_values,
   Pr_z = p_values
 )
 
@@ -3138,6 +3044,10 @@ traits_df <- species_list_prez[, c("species_name", "feeding", "niche",
                                    "current_dispersal", "voltinism", 
                                    "size", "stage")]
 
+# Remove duplicate species names
+traits_df <- traits_df %>%
+       distinct(species_name, .keep_all = TRUE)
+
 # Ensure the species column is set as row names
 trait_df <- traits_df %>% column_to_rownames(var = "species_name")
 
@@ -3175,8 +3085,14 @@ traits_df_ord <- species_list_prez[, c("species_name", "feeding", "niche",
                                        "current_dispersal", "voltinism", 
                                        "size", "stage", "order")]
 
+# Remove duplicate species names
+traits_df_ord <- traits_df_ord %>%
+  distinct(species_name, .keep_all = TRUE)
+
+
 # Ensure the species column is set as row names
 trait_df_ord <- traits_df_ord %>% column_to_rownames(var = "species_name")
+
 
 
 # Remove rows with any NAs
@@ -3272,7 +3188,7 @@ rownames(species_matrix) <- species_matrix$code
 species_matrix$code <- NULL
 
 # Extract column names from trait dataframes
-columns_to_keep <- row.names(trial_trait_dat)
+columns_to_keep <- row.names(trait_dat_ord)
 
 # Remove species that we don't have traits for 
 species_matrix <- species_matrix[, colnames(species_matrix) %in% 
@@ -3336,7 +3252,7 @@ anova(cca_combined_all, permutations = 9999)
 
 ####################### Visualizing the trait space ############################
 # Create the trait space 
-trait_scores <- scores(cca_combined, display = "species")
+trait_scores <- scores(cca_combined_all, display = "species")
 
 # Ensure that the rownames of trial_trait_dat match the rownames of trait_scores
 matching_trait_rows <- rownames(trial_trait_dat) %in% rownames(trait_scores)
@@ -3368,7 +3284,7 @@ for (trait in trait_columns) {
 
 ################## Create the trait space shaded by order ######################
 # Create the trait space 
-trait_scores <- scores(cca_combined, display = "species")
+trait_scores <- scores(cca_combined_all, display = "species")
 
 # Ensure that the rownames of trial_trait_dat match the rownames of trait_scores
 matching_trait_rows_ord <- rownames(trait_dat_ord) %in% rownames(trait_scores)
@@ -3467,6 +3383,9 @@ convex_hull_areas_df
 library(ggplot2)
 library(ggrepel)
 
+# List of traits
+traits <- c("voltinism", "feeding", "niche", "current_dispersal", "size")
+
 # List of models to plot
 models <- list(
   cca_patch_quality = cca_patch_quality,
@@ -3476,73 +3395,78 @@ models <- list(
   cca_combined_all = cca_combined_all
 )
 
-# Loop through each model to create biplots
+
+# Make sure species names is as rownames or an ID column
+trait_df$Species <- rownames(trait_df)
+
+# Loop through each model
 for (model_name in names(models)) {
-  # Extract species and environmental scores from the CCA result
+  
   model <- models[[model_name]]
-  species_scores <- scores(model, display = "species")
+  
+  # Extract species and environmental scores
+  species_scores <- scores(model, display = "species") %>% as.data.frame()
+  species_scores$Species <- rownames(species_scores)
+  
   env_scores <- scores(model, display = "bp")
   
-  # Perform ANOVA for each variable and extract the p-value
+  # Perform ANOVA for each environmental variable
   anova_results <- sapply(rownames(env_scores), function(var) {
     model_temp <- cca(species_hell ~ get(var), data = env_df)
     anova(model_temp, permutations = 999)$`Pr(>F)`[1]
   })
   
-  # Create a dataframe to hold variable names, R² values, and p-values
+  # Create dataframe for environmental variables
   results_df <- data.frame(
     Variable = rownames(env_scores),
     R2 = round(env_scores[, "CCA1"], 2),
     P_value = format.pval(anova_results),
-    Label = paste(1:nrow(env_scores))  # Assign numbers to labels
+    Label = paste(1:nrow(env_scores))  # Number environmental vectors
   )
   
-  # Create a title for the plot
-  plot_title <- paste("Biplot for", model_name)
+  # Merge species scores with traits
+  species_trait_scores <- left_join(species_scores, trait_df, by = "Species")
   
-  # Create a ggplot for the current model
-  model_plot <- ggplot() +
-    geom_point(data = as.data.frame(species_scores), 
-               aes(x = CCA1, y = CCA2), color = "blue", size = 2) +
-    geom_segment(aes(x = 0, y = 0, 
-                     xend = env_scores[, "CCA1"], 
-                     yend = env_scores[, "CCA2"]),
-                 arrow = arrow(length = unit(0.3, "cm")), 
-                 color = "red") +
-    theme_minimal() +
-    ggtitle(plot_title)
+  # Now loop through each trait
+  for (trait in traits) {
+    
+    # Plot
+    model_plot <- ggplot() +
+      # Species points colored by trait
+      geom_point(data = species_trait_scores, 
+                 aes(x = CCA1, y = CCA2, color = .data[[trait]]),
+                 size = 2) +
+      # Environmental arrows
+      geom_segment(aes(x = 0, y = 0, 
+                       xend = env_scores[, "CCA1"], 
+                       yend = env_scores[, "CCA2"]),
+                   arrow = arrow(length = unit(0.3, "cm")), 
+                   color = "red") +
+      # Text labels for environmental arrows
+      geom_text_repel(aes(x = env_scores[, "CCA1"], 
+                          y = env_scores[, "CCA2"], 
+                          label = results_df$Label),
+                      color = "black",
+                      size = 4,
+                      nudge_x = 0.2,
+                      nudge_y = 0.2,
+                      fontface = "bold",
+                      box.padding = 0.5) +
+      # General theme
+      theme_minimal() +
+      ggtitle(paste("Biplot for", model_name, "-", trait)) +
+      theme(legend.position = "right") +
+      guides(color = guide_legend(title = trait))  # Title for color legend
+    
+    # Save the plot
+    filename <- paste0("biplot_", model_name, "_", trait, ".png")
+    ggsave(filename, model_plot, width = 8, height = 6, dpi = 300)
+    
+    # Print to screen if you want to check
+    print(model_plot)
+  }
   
-  # Add text labels with numbers next to the arrows using ggrepel
-  model_plot <- model_plot + 
-    geom_text_repel(aes(x = env_scores[, "CCA1"], 
-                        y = env_scores[, "CCA2"], 
-                        label = results_df$Label), 
-                    color = "black", 
-                    size = 4, 
-                    nudge_x = 0.2,  # Increase nudging distance
-                    nudge_y = 0.2,  # Increase nudging distance
-                    fontface = "bold",  # Make labels bold
-                    box.padding = 0.5)
-  
-  # Create a legend dataframe
-  legend_df <- data.frame(
-    Label = results_df$Label,
-    Variable = results_df$Variable
-  )
-  
-  # Add the legend to the plot
-  model_plot <- model_plot +
-    geom_point(aes(x = Inf, y = Inf), color = "red", size = 0) +  
-    scale_color_manual(values = rep("red", nrow(legend_df)), 
-                       name = "Variable",
-                       labels = paste(legend_df$Label, ": ", 
-                                      legend_df$Variable)) +
-    theme(legend.position = "right")
-  
-  # Print the plot
-  print(model_plot)
-  
-  # Assign the results dataframe to a new variable name based on the model
+  # Save the results table if you want
   assign(paste0(model_name, "_results"), results_df)
 }
 
@@ -3601,4 +3525,3 @@ cat("Variance explained by CCA1_comb_all:", variance_explained_CCA1_comb_all,
     "%\n")
 cat("Variance explained by CCA2_comb_all:", variance_explained_CCA2_comb_all,
     "%\n")
-
