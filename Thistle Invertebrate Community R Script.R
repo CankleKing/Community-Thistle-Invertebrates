@@ -3525,3 +3525,118 @@ cat("Variance explained by CCA1_comb_all:", variance_explained_CCA1_comb_all,
     "%\n")
 cat("Variance explained by CCA2_comb_all:", variance_explained_CCA2_comb_all,
     "%\n")
+
+
+
+######### Create plots of trait centroids and environmental gradients ##########
+library(ggrepel)
+# Extract species scores from CCA
+species_scores <- scores(cca_combined_all, display = "species") %>% 
+  as.data.frame()
+
+# Make sure species names are consistent
+species_scores$Species <- rownames(species_scores)
+
+# Align trait data with species scores
+trait_df$Species <- rownames(trait_df)
+
+# Join traits to species scores
+species_traits <- left_join(species_scores, trait_df, by = "Species")
+
+# Define traits to calculate centroids 
+traits <- c("feeding", "niche", "current_dispersal", "voltinism", "size", 
+            "stage")
+
+# Calculate centroids (average CCA1 and CCA2 for each trait category)
+centroids_list <- list()
+
+for (trait in traits) {
+  centroids <- species_traits %>%
+    group_by(!!sym(trait)) %>%
+    summarize(
+      CCA1 = mean(CCA1, na.rm = TRUE),
+      CCA2 = mean(CCA2, na.rm = TRUE)
+    ) %>%
+    mutate(Trait = trait) %>%
+    rename(Category = !!sym(trait))
+  
+  centroids_list[[trait]] <- centroids
+}
+
+# Combine all centroids into one dataframe
+trait_centroids <- bind_rows(centroids_list)
+
+# Plot trait centroids
+ggplot(trait_centroids, aes(x = CCA1, y = CCA2, color = Trait)) +
+  geom_point(size = 4) +
+  geom_text(aes(label = Category), vjust = -0.8, size = 3) +
+  geom_text_repel(data = trait_centroids, aes(x = CCA1, y = CCA2, 
+                                              label = Category), 
+                  size = 3, max.overlaps = 20, box.padding = 0.5, 
+                  show.legend = FALSE) +
+  theme_minimal() +
+  labs(title = "Trait Centroids in CCA Space",
+       x = "CCA1 Axis",
+       y = "CCA2 Axis",
+       color = "Trait") +
+  theme(
+    legend.position = "bottom",
+    plot.title = element_text(hjust = 0.5)
+  )
+
+# fit environmental variables 
+envfit_result <- envfit(cca_combined_all, env_df, permutations = 999)  
+
+# Extract arrows (vectors)
+env_vectors <- as.data.frame(scores(envfit_result, "vectors"))
+env_vectors$Variable <- rownames(env_vectors)
+
+# Scale arrows so they fit nicely
+arrow_multiplier <- 1  # You can adjust this value if arrows look too short/long
+env_vectors <- env_vectors %>%
+  mutate(CCA1 = CCA1 * arrow_multiplier,
+         CCA2 = CCA2 * arrow_multiplier)
+
+# Define a custom color palette for each trait
+trait_colors <- c(
+  "voltinism" = "red",
+  "current_dispersal" = "blue",
+  "feeding" = "darkgreen",
+  "size" = "purple",
+  "stage" = "orange",
+  "niche" = "brown"
+)
+
+# Create a list of unique traits
+trait_list <- unique(trait_centroids$Trait)
+
+# Loop through each trait and plot separately
+for (trait in trait_list) {
+  # Filter for the specific trait
+  trait_subset <- trait_centroids %>% filter(Trait == trait)
+  
+  # Make a new plot for each trait
+  p <- ggplot() +
+    # Centroids
+    geom_point(data = trait_subset, aes(x = CCA1, y = CCA2), 
+               color = trait_colors[trait], size = 4) +
+    geom_text(data = trait_subset, aes(x = CCA1, y = CCA2, label = Category), 
+              vjust = -0.8, size = 3, color = trait_colors[trait]) +
+    # Environmental vectors
+    geom_segment(data = env_vectors, aes(x = 0, y = 0, xend = CCA1, yend = CCA2), 
+                 arrow = arrow(length = unit(0.25, "cm")), color = "black") +
+    geom_text_repel(data = env_vectors, aes(x = CCA1, y = CCA2, label = Variable),
+                    size = 3, color = "black", max.overlaps = 20, 
+                    box.padding = 0.5, show.legend = FALSE) +
+    theme_minimal() +
+    labs(title = paste("Trait Centroids + Environmental Vectors:", trait),
+         x = "CCA1 Axis",
+         y = "CCA2 Axis") +
+    theme(
+      legend.position = "none",   # No legend needed since color is fixed
+      plot.title = element_text(hjust = 0.5)
+    )
+  
+  # Print the plot to a new window
+  print(p)
+}
